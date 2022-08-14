@@ -6,14 +6,13 @@ use std::fs;
 use sha256;
 use clap::{App, arg, value_parser};
 
-// usage:
-// merge-tool xx yy --output yy
-
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum Action {
     Error,
     ShowSameFiles,
     ShowDiffFiles,
+    MergeIntoA,
+    MergeIntoB,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,7 +47,8 @@ fn parse_args() -> Args {
         .author("me")
         .arg(arg!(-A --dirA <DIR> "Defines directory A").required(true).value_parser(value_parser!(PathBuf)))
         .arg(arg!(-B --dirB <DIR> "Defines directory B").required(true).value_parser(value_parser!(PathBuf)))
-        .arg(arg!(--action <ACTION> "Defines the action that should happen.").required(true)).get_matches();
+        .arg(arg!(--action <ACTION> "Defines the action that should happen.").required(true).help("ACTION: diff | equal | merge_into_a (delete from b) | merge_into_b (delete from a)"))
+        .get_matches();
 
     let mut args = Args::new();
 
@@ -62,6 +62,8 @@ fn parse_args() -> Args {
         match action.as_str() {
             "diff" => args.action = Action::ShowDiffFiles,
             "equal" => args.action = Action::ShowSameFiles,
+            "merge_into_a" => args.action = Action::MergeIntoA,
+            "merge_into_b" => args.action = Action::MergeIntoB,
             _ => {
                 eprintln!("Action '{action}' is not valid.\nRerun with --help for more information.");
                 std::process::exit(1);
@@ -87,12 +89,57 @@ fn show_same_files(args: Args) -> std::io::Result<()> {
     let dir_a_map = get_shas_of_files(args.dir_a)?;
     let dir_b_map = get_shas_of_files(args.dir_b)?;
 
-    for (k, v) in dir_a_map.iter() {
-        if dir_b_map.contains_key(k) {
-            println!("The files '{}' and '{}' are identical", v, dir_b_map[k]);
+    for (hash, fname) in dir_a_map.iter() {
+        if dir_b_map.contains_key(hash) {
+            println!("The files '{}' and '{}' are identical", fname, dir_b_map[hash]);
         }
     }
 
+    Ok(())
+}
+
+fn show_diff_files(args: Args) -> std::io::Result<()> {
+    let dir_a_map = get_shas_of_files(args.dir_a.clone())?;
+    let dir_b_map = get_shas_of_files(args.dir_b.clone())?;
+
+    for (hash, fname) in dir_a_map.iter() {
+        if !dir_b_map.contains_key(hash) {
+            println!("There file '{fname}' is unique in the directories '{}' and '{}'", args.dir_a.display(), args.dir_b.display());
+        }
+    }
+    for (hash, fname) in dir_b_map.iter() {
+        if !dir_a_map.contains_key(hash) {
+            println!("There file '{fname}' is unique in the directories '{}' and '{}'", args.dir_a.display(), args.dir_b.display());
+        }
+    }
+    Ok(())
+}
+
+fn merge_into_a(args: Args) -> std::io::Result<()> {
+    let dir_a_map = get_shas_of_files(args.dir_a)?;
+    let dir_b_map = get_shas_of_files(args.dir_b)?;
+
+    for (hash, _) in dir_a_map.iter() {
+        if dir_b_map.contains_key(hash) {
+            let to_delete = &dir_b_map[hash];
+            println!("Deleting '{}'.", to_delete);
+            fs::remove_file(to_delete)?;
+        }
+    }
+    Ok(())
+}
+
+fn merge_into_b(args: Args) -> std::io::Result<()> {
+    let dir_a_map = get_shas_of_files(args.dir_a)?;
+    let dir_b_map = get_shas_of_files(args.dir_b)?;
+
+    for (hash, _) in dir_b_map.iter() {
+        if dir_a_map.contains_key(hash) {
+            let to_delete = &dir_a_map[hash];
+            println!("Deleting '{}'.", to_delete);
+            fs::remove_file(to_delete)?;
+        }
+    }
     Ok(())
 }
 
@@ -101,6 +148,9 @@ fn main() -> std::io::Result<()> {
 
     match args.action {
         Action::ShowSameFiles => show_same_files(args)?,
+        Action::ShowDiffFiles => show_diff_files(args)?,
+        Action::MergeIntoA => merge_into_a(args)?,
+        Action::MergeIntoB => merge_into_b(args)?,
         _ => unimplemented!()
     }
 

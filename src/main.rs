@@ -23,6 +23,7 @@ struct Args {
     merge_dir: PathBuf,
     action: Action,
     with_check: bool,
+    only_test_run: bool,
 }
 
 impl Default for Args {
@@ -33,6 +34,7 @@ impl Default for Args {
             merge_dir: PathBuf::new(),
             action: Action::Error,
             with_check: false,
+            only_test_run: false,
         }
     }
 }
@@ -54,7 +56,8 @@ fn parse_args() -> Args {
         .arg(arg!(-B --dirB <DIR> "Defines directory B.").required(true).value_parser(value_parser!(PathBuf)))
         .arg(arg!(--action <ACTION> "Defines the action that should happen.").required(true).help("ACTION: diff | equal | merge_into_a (delete from b) | merge_into_b (delete from a) | merge (--merge argument has to be provided)"))
         .arg(arg!(-c --confirmation <BOOL> "Asking for confirmation before deleting a file.").help("BOOL: true | false").required(false).value_parser(value_parser!(bool)))
-        .arg(arg!(-m --merge <DIR> "Merge A and B into DIR and DELETES content from A and B").required(false).value_parser(value_parser!(PathBuf)))
+        .arg(arg!(-m --merge <DIR> "Merge A and B into DIR and DELETES content from A and B.").required(false).value_parser(value_parser!(PathBuf)))
+        .arg(arg!(-t --test <DIR> "Only show what would happen but dont do anything.").help("BOOL: true | false").required(false).value_parser(value_parser!(bool)))
         .get_matches();
 
     let mut args = Args::new();
@@ -68,9 +71,11 @@ fn parse_args() -> Args {
     if let Some(confirmation) = matches.get_one::<bool>("confirmation") {
         args.with_check = confirmation.clone();
     }
-
     if let Some(merge_directory) = matches.get_one::<PathBuf>("merge") {
         args.merge_dir = merge_directory.to_path_buf();
+    }
+    if let Some(merge_directory) = matches.get_one::<bool>("test") {
+        args.only_test_run = merge_directory.clone();
     }
 
     if let Some(action) = matches.get_one::<String>("action") {
@@ -143,11 +148,15 @@ fn merge_into_a(args: Args) -> std::io::Result<()> {
                 std::io::stdin().read_line(&mut user_input)?;
                 if user_input.starts_with('y') || user_input.starts_with('Y') {
                     println!("Deleting '{}'.", to_delete);
-                    fs::remove_file(to_delete)?;
+                    if ! args.only_test_run {
+                        fs::remove_file(to_delete)?;
+                    }
                 }
             } else {
                 println!("Deleting '{}'.", to_delete);
-                fs::remove_file(to_delete)?;
+                if ! args.only_test_run {
+                    fs::remove_file(to_delete)?;
+                }
             }
         }
     }
@@ -167,11 +176,15 @@ fn merge_into_b(args: Args) -> std::io::Result<()> {
                 std::io::stdin().read_line(&mut user_input)?;
                 if user_input.starts_with('y') || user_input.starts_with('Y') {
                     println!("Deleting '{}'.", to_delete);
-                    fs::remove_file(to_delete)?;
+                    if ! args.only_test_run {
+                        fs::remove_file(to_delete)?;
+                    }
                 }
             } else {
                 println!("Deleting '{}'.", to_delete);
-                fs::remove_file(to_delete)?;
+                if ! args.only_test_run {
+                    fs::remove_file(to_delete)?;
+                }
             }
         }
     }
@@ -192,7 +205,10 @@ fn merge(args: Args) -> std::io::Result<()> {
             std::process::exit(1);
         }
     } else {
-        fs::create_dir(&args.merge_dir).expect("XXX");
+        println!("Creating directory '{}'", &args.merge_dir.display());
+        if ! args.only_test_run {
+            fs::create_dir(&args.merge_dir).expect(&format!("Failed to create directory with name '{}'.", &args.merge_dir.display()));
+        }
     }
 
     let dir_a_map = get_shas_of_files(args.dir_a)?;
@@ -204,7 +220,9 @@ fn merge(args: Args) -> std::io::Result<()> {
         let new_name = file.file_name().unwrap();
         let new_name = args.merge_dir.to_str().unwrap().to_string() + "/" + &new_name.to_str().unwrap();
         println!("Moving '{}' to '{}'", fname, new_name);
-        fs::rename(fname, new_name)?;
+        if ! args.only_test_run {
+            fs::rename(fname, new_name)?;
+        }
     }
 
     // copy everything that is not in dir A into new dir
@@ -214,7 +232,9 @@ fn merge(args: Args) -> std::io::Result<()> {
             let new_name = file.file_name().unwrap();
             let new_name = args.merge_dir.to_str().unwrap().to_string() + "/" + &new_name.to_str().unwrap();
             println!("Moving '{}' to '{}'", fname, new_name);
-            fs::rename(fname, new_name)?;
+            if ! args.only_test_run {
+                fs::rename(fname, new_name)?;
+            }
         }
     }
     Ok(())

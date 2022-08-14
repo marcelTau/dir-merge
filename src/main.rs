@@ -20,6 +20,7 @@ struct Args {
     dir_a: PathBuf,
     dir_b: PathBuf,
     action: Action,
+    with_check: bool,
 }
 
 impl Default for Args {
@@ -28,6 +29,7 @@ impl Default for Args {
             dir_a: PathBuf::new(),
             dir_b: PathBuf::new(),
             action: Action::Error,
+            with_check: false,
         }
     }
 }
@@ -43,11 +45,12 @@ impl Args {
 fn parse_args() -> Args {
     let matches = App::new("merge-tool")
         .version("0.1.0")
-        .about("This is my nice merge-tool application")
+        .about("This is my nice merge-tool application.")
         .author("me")
-        .arg(arg!(-A --dirA <DIR> "Defines directory A").required(true).value_parser(value_parser!(PathBuf)))
-        .arg(arg!(-B --dirB <DIR> "Defines directory B").required(true).value_parser(value_parser!(PathBuf)))
+        .arg(arg!(-A --dirA <DIR> "Defines directory A.").required(true).value_parser(value_parser!(PathBuf)))
+        .arg(arg!(-B --dirB <DIR> "Defines directory B.").required(true).value_parser(value_parser!(PathBuf)))
         .arg(arg!(--action <ACTION> "Defines the action that should happen.").required(true).help("ACTION: diff | equal | merge_into_a (delete from b) | merge_into_b (delete from a)"))
+        .arg(arg!(-c --confirmation <BOOL> "Asking for confirmation before deleting a file.").help("BOOL: true | false").required(false).value_parser(value_parser!(bool)))
         .get_matches();
 
     let mut args = Args::new();
@@ -58,6 +61,10 @@ fn parse_args() -> Args {
     if let Some(dir_b) = matches.get_one::<PathBuf>("dirB") {
         args.dir_b = dir_b.to_path_buf();
     }
+    if let Some(confirmation) = matches.get_one::<bool>("confirmation") {
+        args.with_check = confirmation.clone();
+    }
+
     if let Some(action) = matches.get_one::<String>("action") {
         match action.as_str() {
             "diff" => args.action = Action::ShowDiffFiles,
@@ -72,7 +79,6 @@ fn parse_args() -> Args {
     }
     args
 }
-
 
 fn get_shas_of_files(path: PathBuf) -> std::io::Result<HashMap<String, String>> {
     let mut map = HashMap::new();
@@ -122,8 +128,18 @@ fn merge_into_a(args: Args) -> std::io::Result<()> {
     for (hash, _) in dir_a_map.iter() {
         if dir_b_map.contains_key(hash) {
             let to_delete = &dir_b_map[hash];
-            println!("Deleting '{}'.", to_delete);
-            fs::remove_file(to_delete)?;
+            if args.with_check { 
+                println!("Remove file '{to_delete}' [y/n]");
+                let mut user_input = String::new();
+                std::io::stdin().read_line(&mut user_input)?;
+                if user_input.starts_with('y') || user_input.starts_with('Y') {
+                    println!("Deleting '{}'.", to_delete);
+                    fs::remove_file(to_delete)?;
+                }
+            } else {
+                println!("Deleting '{}'.", to_delete);
+                fs::remove_file(to_delete)?;
+            }
         }
     }
     Ok(())
@@ -136,8 +152,18 @@ fn merge_into_b(args: Args) -> std::io::Result<()> {
     for (hash, _) in dir_b_map.iter() {
         if dir_a_map.contains_key(hash) {
             let to_delete = &dir_a_map[hash];
-            println!("Deleting '{}'.", to_delete);
-            fs::remove_file(to_delete)?;
+            if args.with_check { 
+                println!("Remove file '{to_delete}' [y/n]");
+                let mut user_input = String::new();
+                std::io::stdin().read_line(&mut user_input)?;
+                if user_input.starts_with('y') || user_input.starts_with('Y') {
+                    println!("Deleting '{}'.", to_delete);
+                    fs::remove_file(to_delete)?;
+                }
+            } else {
+                println!("Deleting '{}'.", to_delete);
+                fs::remove_file(to_delete)?;
+            }
         }
     }
     Ok(())
